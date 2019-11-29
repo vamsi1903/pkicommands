@@ -1,0 +1,138 @@
+FULL PKI STEPS
+
+First complete DNS in between all the machines rootca subca ser1
+
+FIRSTLY
+
+for rootca configuration ------
+
+#sudo mkdir /home/shuhari/ca
+
+#sudo mkdir -p certs crl newcerts private subca/csr subca/certs/
+
+tree
+
+------create the CA Database ------
+
+ca$sudo touch index.txt
+ca$sudo touch index.txt.attr
+ca$sudo echo 1000 > serial
+ca$sudo echo 1000 > crlnumber
+
+tree
+
+ca$sudo wget http://192.168.74.48/files/pki/rootca.cnf
+
+ca$sudo nano rootca.cnf
+
+****editing****
+
+dir /home/shuhari/ca
+
+:wq
+
+***
+
+ca$sudo openssl genrsa -aes256 -out private/ca.key.pem 4096
+
+ca$sudo tree
+
+ca$sudo chmod 400 private/ca.key.pem
+
+ca$sudo openssl req -config rootca.cnf -key private/ca.key.pem -new -x509 -days 7300 -extensions v3_ca -out certs/ca.cert.pem
+ca$ sudo cat certs/ca.cert.pem
+ca$openssl x509 -noout  -text -in certs/ca.cert.pem
+
+
+-------switch to subca--------
+
+shuhari# mkdir /home/shuhari/subca
+shuahri# cd /home/shuhari/subca/
+subca$ mkdir certs crl csr newcerts private
+subca$ tree
+subca$ sudo apt-get install tree
+subca$ tree
+subca$ sudo chmod 700 private/
+subca$ touch index.txt
+subca$ touch index.txt.attr
+subca$ echo 1000 > serial
+subca$ echo 1000 > crlnumber
+subca$ wget 192.168.74.48/files/pki/subca.cnf
+subca$ sudo nano subca.cnf
+subca$ openssl genrsa -aes256 -out private/subca.key.pem 4096
+subca$ tree
+subca$ sudo chmod 400 private/subca.key.pem
+subca$ openssl req -config subca.cnf -new -sha256 -key private/subca.key.pem -out csr/subca.csr.pem
+subca$ scp csr/subca.csr.pem shuhari@rootca.shuahri.local:/home/shuhari/ca/subca/csr
+subca$ openssl req -in csr/subca.csr.pem -noout -text
+subca$ tree 
+
+
+-------switch machine to rootca------
+
+ca$ sudo openssl ca -config rootca.cnf -extensions v3_intermediate_ca -days 3650 -notext -md sha256 -in subca/csr/subca.csr.pem -out subca/certs/subca.cert.pem
+ca$ tree
+ca$ cat serial
+ca$ sudo chmod 444 subca/certs/subca.cert.pem
+ca$ openssl verify -CAfile certs/ca.cert.pem subca/certs/subca.cert.pem
+ca$ scp subca/certs/subca.cert.pem shuhari@subca.shuahri.local:/home/shuhari/subca/certs
+ca$ cat subca/certs/subca.cert.pem certs/ca.cert.pem  > subca/certs/ca-chain.cert.pem
+ca$ scp subca/certs/ca-chain.cert.pem  shuhari@subca.shuahri.local:/home/shuhari/subca/certs
+ca$ tree
+
+--------switch machine to ser1-----
+
+# mkdir certs
+# cd certs
+certs$ wget http://192.168.74.48/files/pki/subca.cnf
+certs$ openssl genrsa -out www.shuhari.local.key.pem 2048
+certs$ chmod 444 www.shuhari.local.key.pem
+certs$ openssl req -config subca.cnf -key www.shuhari.local.key.pem -new -sha256 -out www.shuhari.local.csr.pem
+
+*****fill form*****
+
+certs$ scp www.shuhari.local.csr.pem shuhari@subca:/home/shuhari/subca/csr/
+
+-------switch machine to subca
+
+subca$ sudo openssl ca -config subca.cnf -extensions server_cert -days 275 -notext -md sha256 -in csr/www.shuhari.local.csr.pem -out certs/www.shuhari.local.cert.pem
+
+subca$ chmod 444 certs/www.shuhari.local.cert.pem
+
+subca$ scp certs/www.shuahri.local.cert.pem shuhari@www:/home/shuhari/certs/
+
+subca$ scp certs/ca-chain.cert.pem shuhari@www:/home/shuhari/certs/
+
+------- switch to ser1 --------
+
+certs$ openssl verify -CAfile ca-chain.cert.pem www.shuhari.local.cert.pem
+certs$ sudo mkdir -p /etc/apache2/ssl
+certs$ sudo cp /home/shuhari/certs/www.shuhari.local.cert.pem /etc/apache2/ssl/
+certs$ sudo cp /home/shuhari/certs/www.shuhari.local.key.pem /etc/apache2/ssl/
+certs$ sudo cp /home/shuhari/certs/ca-chain.cert.pem /etc/apache2/ssl/
+certs$ sudo chmod 600 /etc/apache2/ssl/*
+certs$ sudo a2enmod ssl
+certs$ cd /etc/apache2/ssl/sites-enabled
+certs$ sudo a2enmod default-ssl.conf
+
+certs$ vim /etc/apache2/ssl/sites-enabled/default-ssl.conf
+
+
+*****EDITOR*****
+
+		ServerAdmin
+//enter//	ServerName www.shuahri.local:443
+		SSLCertificateFile /etc/apache2/ssl/www.shuhari.local.cert.pem
+		SSLCertificateKeyFile /etc/apache2/ssl/www.shuhari.local.key.pem
+		SSLCACertificate /etc/apache2/ssl/ca-chain.cert.pem
+:wq
+****************
+
+certs$ ss -ant //to check 443 is open or not
+
+-------final result----- 
+
+certs$ openssl s_client -connect www.shuahri.local:443
+
+
+//check the six line to confirm----///
